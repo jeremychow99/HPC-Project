@@ -91,7 +91,7 @@ def cost_function(theta, input_layer_size, hidden_layer_size, num_labels, X, y, 
 	
 	return J
 
-
+@profile
 def gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda):
 	""" Neural net cost function gradient for a three layer classification network.
 	Input:
@@ -137,6 +137,7 @@ def gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda
 		delta2 = (Theta2[:,1:].T @ delta3) * grad_g(z2)
 		Delta1 += (delta2 @ a1.T)	
 
+	# Batch Gradient Descent
 	Theta1_grad = Delta1 / m
 	Theta2_grad = Delta2 / m
 
