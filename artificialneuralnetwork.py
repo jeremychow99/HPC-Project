@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy import optimize
 from functools import partial
+from timeit import default_timer as timer
 
 """
 Create Your Own Artificial Neural Network for Multi-class Classification (With Python)
@@ -91,7 +92,7 @@ def cost_function(theta, input_layer_size, hidden_layer_size, num_labels, X, y, 
 	
 	return J
 
-@profile
+# @profile
 def gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda):
 	""" Neural net cost function gradient for a three layer classification network.
 	Input:
@@ -105,7 +106,7 @@ def gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda
 	Output:
 	  grad                flattened vector of derivatives of the neural network 
 	"""
-	
+
 	# unflatten theta
 	Theta1, Theta2 = reshape(theta, input_layer_size, hidden_layer_size, num_labels)
 	
@@ -288,7 +289,38 @@ def main():
 	return 0
 
 
+# Time the gradient function
+def time_gradient_fn():
+	""" Time the gradient function """
+	# Load the training and test datasets
+	train = np.genfromtxt('train.csv', delimiter=',')
+	# get labels (0=Elliptical, 1=Spiral, 2=Irregular)
+	train_label = train[:,0].reshape(len(train),1)
+	# normalize image data to [0,1]
+	train = train[:,1:] / 255.
+	# Construct our data matrix X (2700 x 5000)
+	X = train
+	# Construct our label vector y (2700 x 1)
+	y = train_label
+	# Two layer Neural Network parameters:
+	m = np.shape(X)[0]
+	input_layer_size = np.shape(X)[1]
+	hidden_layer_size = 8
+	num_labels = 3
+	lmbda = 1.0    # regularization parameter
+	# Initialize random weights:
+	Theta1 = np.random.rand(hidden_layer_size, input_layer_size+1) * 0.4 - 0.2
+	Theta2 = np.random.rand(num_labels, hidden_layer_size+1) * 0.4 - 0.2
+	# flattened initial guess
+	theta0 = np.concatenate((Theta1.flatten(), Theta2.flatten()))
+	# Time the gradient function
+	start = timer()
+	grad = gradient(theta0, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda)
+	end = timer()
+	print('time to compute gradient:', end-start, 'seconds')
+	return 0
 
 if __name__== "__main__":
+#   time_gradient_fn()
   main()
 
