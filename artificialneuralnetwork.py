@@ -3,6 +3,7 @@ import numpy as np
 from scipy import optimize
 from functools import partial
 from timeit import default_timer as timer
+import torch
 
 """
 Create Your Own Artificial Neural Network for Multi-class Classification (With Python)
@@ -152,6 +153,59 @@ def gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda
 	return grad
 
 
+def pytorch_gradient(theta, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda):
+    """ PyTorch version of the neural net cost function gradient for a three layer classification network.
+    Input:
+      theta               flattened vector of neural net model parameters
+      input_layer_size    size of input layer
+      hidden_layer_size   size of hidden layer
+      num_labels          number of labels
+      X                   matrix of training data
+      y                   vector of training labels
+      lmbda               regularization term
+    Output:
+      grad                flattened vector of derivatives of the neural network 
+    """
+
+    # unflatten theta
+    Theta1, Theta2 = reshape(theta, input_layer_size, hidden_layer_size, num_labels)
+
+    # convert to PyTorch tensors
+    X_tensor = torch.tensor(X, dtype=torch.float32)
+    y_tensor = torch.tensor(y.flatten(), dtype=torch.long)
+    Theta1_tensor = torch.tensor(Theta1, dtype=torch.float32, requires_grad=True)
+    Theta2_tensor = torch.tensor(Theta2, dtype=torch.float32, requires_grad=True)
+
+    # number of training values
+    m = len(y)
+
+    # Forward pass
+    a1 = torch.cat((torch.ones((m, 1)), X_tensor), dim=1)
+    z2 = torch.mm(a1, Theta1_tensor.t())
+    a2 = torch.cat((torch.ones((m, 1)), torch.sigmoid(z2)), dim=1)
+    z3 = torch.mm(a2, Theta2_tensor.t())
+    a3 = torch.sigmoid(z3)
+
+    # One-hot encoding
+    y_onehot = torch.zeros(m, num_labels)
+    y_onehot.scatter_(1, y_tensor.view(-1, 1), 1)
+
+    # Cost function
+    J = torch.sum(-y_onehot * torch.log(a3) - (1 - y_onehot) * torch.log(1 - a3)) / m
+
+    # Add regularization
+    J += lmbda / (2. * m) * (torch.sum(Theta1_tensor[:, 1:]**2) + torch.sum(Theta2_tensor[:, 1:]**2))
+
+    # Backward pass
+    J.backward()
+
+    # Extract gradients
+    grad = torch.cat((Theta1_tensor.grad.flatten(), Theta2_tensor.grad.flatten()))
+
+    return grad.numpy()
+
+
+
 N_iter = 1
 J_min = np.Inf
 theta_best = []
@@ -216,9 +270,11 @@ def callbackF(input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test
 	plt.pause(0.001)
 
 
-def main():
+def main(func_to_test=gradient):
 	""" Artificial Neural Network for classifying galaxies """
 	
+	start_time = timer()
+
 	# set the random number generator seed
 	np.random.seed(917)
 	
@@ -269,7 +325,7 @@ def main():
 	# Minimize the cost function using a nonlinear conjugate gradient algorithm
 	args = (input_layer_size, hidden_layer_size, num_labels, X, y, lmbda)  # parameter values
 	cbf = partial(callbackF, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda, test, test_label)
-	theta = optimize.fmin_cg(cost_function, theta0, fprime=gradient, args=args, callback=cbf, maxiter=600)
+	theta = optimize.fmin_cg(cost_function, theta0, fprime=func_to_test, args=args, callback=cbf, maxiter=600)
 
 	# unflatten theta
 	Theta1, Theta2 = reshape(theta_best, input_layer_size, hidden_layer_size, num_labels)
@@ -281,46 +337,61 @@ def main():
 	# Print accuracy of predictions
 	print('accuracy on training set =', np.sum(1.*(train_pred==train_label))/len(train_label))
 	print('accuracy on test set =', np.sum(1.*(test_pred==test_label))/len(test_label))	
+
+	end_time = timer()
+	execution_time = end_time - start_time
+	print(f"Total execution time: {execution_time:.6f} seconds")
 			
 	# Save figure
 	plt.savefig('artificialneuralnetwork.png',dpi=240)
 	plt.show()
-	    
+	
+	
 	return 0
 
 
-# Time the gradient function
-def time_gradient_fn():
-	""" Time the gradient function """
-	# Load the training and test datasets
-	train = np.genfromtxt('train.csv', delimiter=',')
-	# get labels (0=Elliptical, 1=Spiral, 2=Irregular)
-	train_label = train[:,0].reshape(len(train),1)
-	# normalize image data to [0,1]
-	train = train[:,1:] / 255.
-	# Construct our data matrix X (2700 x 5000)
-	X = train
-	# Construct our label vector y (2700 x 1)
-	y = train_label
-	# Two layer Neural Network parameters:
-	m = np.shape(X)[0]
-	input_layer_size = np.shape(X)[1]
-	hidden_layer_size = 8
-	num_labels = 3
-	lmbda = 1.0    # regularization parameter
-	# Initialize random weights:
-	Theta1 = np.random.rand(hidden_layer_size, input_layer_size+1) * 0.4 - 0.2
-	Theta2 = np.random.rand(num_labels, hidden_layer_size+1) * 0.4 - 0.2
-	# flattened initial guess
-	theta0 = np.concatenate((Theta1.flatten(), Theta2.flatten()))
-	# Time the gradient function
-	start = timer()
-	grad = gradient(theta0, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda)
-	end = timer()
-	print('time to compute gradient:', end-start, 'seconds')
-	return 0
+def time_gradient_fn_mean_std(func_to_test=gradient, num_iterations=30):
+    """ Time the gradient function and calculate mean and std dev """
+    # Load the training and test datasets
+    train = np.genfromtxt('train.csv', delimiter=',')
+    # get labels (0=Elliptical, 1=Spiral, 2=Irregular)
+    train_label = train[:, 0].reshape(len(train), 1)
+    # normalize image data to [0,1]
+    train = train[:, 1:] / 255.
+    # Construct our data matrix X (2700 x 5000)
+    X = train
+    # Construct our label vector y (2700 x 1)
+    y = train_label
+    # Two layer Neural Network parameters:
+    m = np.shape(X)[0]
+    input_layer_size = np.shape(X)[1]
+    hidden_layer_size = 8
+    num_labels = 3
+    lmbda = 1.0  # regularization parameter
+    # Initialize random weights:
+    Theta1 = np.random.rand(hidden_layer_size, input_layer_size + 1) * 0.4 - 0.2
+    Theta2 = np.random.rand(num_labels, hidden_layer_size + 1) * 0.4 - 0.2
+    # flattened initial guess
+    theta0 = np.concatenate((Theta1.flatten(), Theta2.flatten()))
+
+    # Time the gradient function for the first num_iterations iterations
+    times = []
+    for _ in range(num_iterations):
+        start = timer()
+        grad = func_to_test(theta0, input_layer_size, hidden_layer_size, num_labels, X, y, lmbda)
+        end = timer()
+        times.append(end - start)
+
+    # Calculate mean and std dev
+    mean_time = np.mean(times)
+    std_dev_time = np.std(times)
+
+    print(f'Mean time to compute gradient over {num_iterations} iterations: {mean_time:.6f} seconds')
+    print(f'Standard deviation of time: {std_dev_time:.6f} seconds')
+
+    return 0
+
 
 if __name__== "__main__":
-#   time_gradient_fn()
-  main()
-
+  time_gradient_fn_mean_std(pytorch_gradient)
+  main(pytorch_gradient)
